@@ -59,7 +59,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"runtime"
 )
 
@@ -100,10 +99,20 @@ var defaultOptions = []SetOption{
 	WithGoFunc(func(f func()) { go f() }),
 }
 
-// New creates a coroutine.
+// New creates a coroutine, a function running in a new goroutine that is
+// explicitly suspended and resumed.
 //
-// See package-level documentation for details on how coroutines work.
-func New(f func(yield func()), setOptions ...SetOption) Resume {
+// When the context is cancelled, the coroutine is killed if suspended or
+// the next time it is suspended. See KillOnContextDone.
+//
+// See package-level documentation for details.
+func New(ctx context.Context, run func(yield func()), setOptions ...SetOption) Resume {
+	return NewCoroutine(run, append(setOptions, KillOnContextDone(ctx))...)
+}
+
+// NewCoroutine is like New, except it doesn't take a context. (A context can
+// still be used for cancelling with KillOnContextDone).
+func NewCoroutine(run func(yield func()), setOptions ...SetOption) Resume {
 	var options Options
 	for _, setOption := range append(defaultOptions, setOptions...) {
 		setOption(&options)
@@ -162,7 +171,7 @@ func New(f func(yield func()), setOptions ...SetOption) Resume {
 
 		waitResume()
 
-		f(func() {
+		run(func() {
 			if yieldPanic != nil {
 				panic(yieldPanic)
 			}
@@ -199,25 +208,80 @@ func (err ErrKilled) Unwrap() error {
 	return err.By
 }
 
-// NewIterator implements an iterator protocol on top of a raw coroutine.
+// Generate runs a generator function in a coroutine.
 //
-// When the coroutine yields, it calls a yield function with a value. This
-// value is set on the 'yielded' parameter, which must be a pointer to a
-// value settable to the yielded value.
+// The generator starts running when the returned "next" function is called.
+// When the generator yields a value by calling its "yield" function argument,
+// it stops running until "next" is called again. Conversely, a call to "next"
+// is blocked until the generator either yields or returns a value.
 //
-// When the coroutine returns, the return value is set in the same way on the
-// 'returned' parameter.
+// Yielded values are set to the variable pointed by the argument of type
+// *Yielded on 
 //
-// See package exampleiterator for an example of a type-safe wrapper to this
-// function.
-func NewIterator(yielded, returned interface{}, f func(yield func(interface{})) interface{}, setOption ...SetOption) Resume {
-	setYielded := reflect.ValueOf(yielded).Elem().Set
-	setReturned := reflect.ValueOf(returned).Elem().Set
-	return New(func(yield func()) {
-		returned := f(func(v interface{}) {
-			setYielded(reflect.ValueOf(v))
+// If your generator doesn't yield useful values, consider the simpler Loop
+// instead.
+//
+// If your generator doesn't return a value, consider the simpler Enumerate.
+//
+// If your generator neither yields nor returns values, use a plain coroutine
+// with New or NewCoroutine.
+//
+// See ExampleGenerate.
+func Generate[Returned, Yielded any](
+	ctx context.Context,
+	run func(yield func(Yielded)) Returned,
+	setOption ...SetOption,
+) (next func(*Returned, *Yielded) (alive bool)) {
+	var yp *Yielded
+	var rp *Returned 
+	resume := New(ctx, func(yield func()) {
+		*rp = run(func(v Yielded) {
+			*yp = v
 			yield()
 		})
-		setReturned(reflect.ValueOf(returned))
 	}, setOption...)
+	return func(r *Returned, y *Yielded) bool {
+		yp, rp = y, r
+		alive := resume()
+		return alive
+	}
+}
+
+// Loop is like Generate, except no values are yielded.
+func Loop[Returned any](
+	ctx context.Context,
+	run func(yield func()) Returned,
+	setOption ...SetOption,
+) (next func(*Returned) (alive bool)) {
+	var rp *Returned 
+	resume := New(ctx, func(yield func()) {
+		*rp = run(func() {
+			yield()
+		})
+	}, setOption...)
+	return func(r *Returned) bool {
+		rp = r
+		alive := resume()
+		return alive
+	}
+}
+
+// Enumerate is like Generate, except there is no return value.
+func Enumerate[Yielded any](
+	ctx context.Context,
+	run func(yield func(Yielded)),
+	setOption ...SetOption,
+) (next func(*Yielded) (alive bool)) {
+	var yp *Yielded
+	resume := New(ctx, func(yield func()) {
+		run(func(v Yielded) {
+			*yp = v
+			yield()
+		})
+	}, setOption...)
+	return func(y *Yielded) bool {
+		yp = y
+		alive := resume()
+		return alive
+	}
 }

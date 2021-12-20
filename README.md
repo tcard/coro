@@ -1,11 +1,11 @@
-# coro ![Actions](https://github.com/tcard/coro/actions/workflows/go.yml/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/tcard/coro.svg)](https://pkg.go.dev/github.com/tcard/coro)
+# coro ![Actions](https://github.com/tcard/coro/actions/workflows/go.yml/badge.svg?branch=v2) [![Go Reference](https://pkg.go.dev/badge/github.com/tcard/coro/v2.svg)](https://pkg.go.dev/github.com/tcard/coro/v2)
 
 Package coro implements cooperative coroutines on top of goroutines.
 
-It then implements iterators on top of that.
+It then implements generators on top of that.
 
 ```go
-resume := coro.New(func(yield func()) {
+resume := coro.New(ctx, func(yield func()) {
 	for i := 1; i <= 3; i++ {
 		fmt.Println("coroutine:", i)
 		yield()
@@ -32,17 +32,19 @@ fmt.Println("returned")
 ```
 
 ```go
-iter := NewStringIterator(func(yield func(string)) error {
+next := Generate(ctx, func(yield func(string)) error {
 	for _, foo := range []string{"foo", "bar", "baz"} {
 		yield(foo)
 	}
 	return errors.New("done")
 })
 
-for iter.Next() {
-	fmt.Println("yielded:", iter.Yielded)
+var i int
+var err error
+for next(&err, &i) {
+	fmt.Println("yielded:", i)
 }
-fmt.Println("returned:", iter.Returned)
+fmt.Println("returned:", err)
 
 // Output:
 // yielded: foo

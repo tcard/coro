@@ -8,11 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tcard/coro"
+	"github.com/tcard/coro/v2"
 )
 
+var ctx = context.Background()
+
 func Example() {
-	resume := coro.New(func(yield func()) {
+	resume := coro.New(ctx, func(yield func()) {
 		for i := 1; i <= 3; i++ {
 			fmt.Println("coroutine:", i)
 			yield()
@@ -38,20 +40,20 @@ func Example() {
 	// returned
 }
 
-func ExampleNewIterator() {
+func ExampleGenerate() {
 	var yielded int
-	var returned error
-	next := coro.NewIterator(&yielded, &returned, func(yield func(interface{})) interface{} {
+	var err error
+	next := coro.Generate(ctx, func(yield func(int)) error {
 		for i := 1; i <= 3; i++ {
 			yield(i)
 		}
 		return errors.New("done")
 	})
 
-	for next() {
+	for next(&err, &yielded) {
 		fmt.Println("yielded:", yielded)
 	}
-	fmt.Println("returned:", returned)
+	fmt.Println("returned:", err)
 
 	// Output:
 	// yielded: 1
@@ -64,7 +66,7 @@ func TestLeak(t *testing.T) {
 	panicked := make(chan interface{})
 
 	func() {
-		resume := coro.New(func(yield func()) {
+		resume := coro.NewCoroutine(func(yield func()) {
 			defer func() {
 				if r := recover(); r != nil {
 					panicked <- r
@@ -94,7 +96,7 @@ func TestKillOnContextDone(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	resume := coro.New(func(yield func()) {
+	resume := coro.NewCoroutine(func(yield func()) {
 		defer func() {
 			if r := recover(); r != nil {
 				panicked <- r
