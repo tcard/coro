@@ -1,4 +1,4 @@
-# coro [![Build Status](https://secure.travis-ci.org/tcard/coro.svg?branch=master)](http://travis-ci.org/tcard/coro) [![GoDoc](https://godoc.org/github.com/tcard/coro?status.svg)](https://godoc.org/github.com/tcard/coro)
+# coro ![Actions](https://github.com/tcard/coro/actions/workflows/go.yml/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/tcard/coro.svg)](https://pkg.go.dev/github.com/tcard/coro)
 
 Package coro implements cooperative coroutines on top of goroutines.
 
